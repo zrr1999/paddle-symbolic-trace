@@ -452,14 +452,28 @@ class PyCodeGen:
         inputs = analysis_inputs(self._instructions, index)
         fn_name = ResumeFnNameFactory().next()
         stack_arg_str = fn_name + '_stack_{}'
-        self._instructions = (
-            [
-                gen_instr('LOAD_FAST', argval=stack_arg_str.format(i))
-                for i in range(stack_size)
-            ]
-            + [gen_instr('JUMP_ABSOLUTE', jump_to=self._instructions[index])]
-            + self._instructions
-        )
+        if sys.version_info >= (3, 11):
+            self._instructions = (
+                [
+                    gen_instr('LOAD_FAST', argval=stack_arg_str.format(i))
+                    for i in range(stack_size)
+                ]
+                + [gen_instr('RESUME', arg=0, argval=0)]
+                + self._instructions
+            )
+        else:
+            self._instructions = (
+                [
+                    gen_instr('LOAD_FAST', argval=stack_arg_str.format(i))
+                    for i in range(stack_size)
+                ]
+                + [
+                    gen_instr(
+                        'JUMP_ABSOLUTE', jump_to=self._instructions[index]
+                    )
+                ]
+                + self._instructions
+            )
 
         self._code_options['co_argcount'] = len(inputs) + stack_size
         # inputs should be at the front of the co_varnames
@@ -835,6 +849,15 @@ class PyCodeGen:
     def gen_pop_top(self):
         self._add_instr("POP_TOP")
 
+    @staticmethod
+    def support_python(condition):
+        def wrapper(fn):
+            assert condition
+            return fn
+
+        return wrapper
+
+    @support_python(sys.version_info < (3, 11))
     def gen_rot_n(self, n):
         if n <= 1:
             return
