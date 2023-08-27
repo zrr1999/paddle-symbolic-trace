@@ -458,7 +458,7 @@ class PyCodeGen:
                     gen_instr('LOAD_FAST', argval=stack_arg_str.format(i))
                     for i in range(stack_size)
                 ]
-                + [gen_instr('RESUME', arg=0, argval=0)]
+                + [gen_instr('JUMP_FORWARD', jump_to=self._instructions[index])]
                 + self._instructions
             )
         else:
@@ -496,7 +496,6 @@ class PyCodeGen:
                 "Break graph in closure is not support."
             )
         fn = types.FunctionType(new_code, self._f_globals, fn_name)
-
         return fn, inputs
 
     def gen_disable_eval_frame(self):
@@ -849,35 +848,33 @@ class PyCodeGen:
     def gen_pop_top(self):
         self._add_instr("POP_TOP")
 
-    @staticmethod
-    def support_python(condition):
-        def wrapper(fn):
-            assert condition
-            return fn
-
-        return wrapper
-
-    @support_python(sys.version_info < (3, 11))
     def gen_rot_n(self, n):
         if n <= 1:
             return
-        if n <= 4:
-            self._add_instr("ROT_" + ["TWO", "THREE", "FOUR"][n - 2])
+        if sys.version_info < (3, 10):
+            if n <= 4:
+                self._add_instr("ROT_" + ["TWO", "THREE", "FOUR"][n - 2])
+            else:
+
+                def rot_n_fn(n):
+                    vars = [f"var{i}" for i in range(n)]
+                    rotated = reversed(vars[-1:] + vars[:-1])
+                    fn = eval(f"lambda {','.join(vars)}: ({','.join(rotated)})")
+                    fn = no_eval_frame(fn)
+                    fn.__name__ = f"rot_{n}_fn"
+                    return fn
+
+                self.gen_build_tuple(n)
+                self.gen_load_const(rot_n_fn(n))
+                self.gen_rot_n(2)
+                self._add_instr("CALL_FUNCTION_EX", arg=0)
+                self.gen_unpack_sequence(n)
+        elif sys.version_info < (3, 11):
+            self._add_instr("ROT_N", arg=n)
         else:
-
-            def rot_n_fn(n):
-                vars = [f"var{i}" for i in range(n)]
-                rotated = reversed(vars[-1:] + vars[:-1])
-                fn = eval(f"lambda {','.join(vars)}: ({','.join(rotated)})")
-                fn = no_eval_frame(fn)
-                fn.__name__ = f"rot_{n}_fn"
-                return fn
-
-            self.gen_build_tuple(n)
-            self.gen_load_const(rot_n_fn(n))
-            self.gen_rot_n(2)
-            self._add_instr("CALL_FUNCTION_EX", arg=0)
-            self.gen_unpack_sequence(n)
+            for i in range(n, 1, -1):
+                self._add_instr("SWAP", arg=i)
+                print(i)
 
     def gen_return(self):
         self._add_instr("RETURN_VALUE")

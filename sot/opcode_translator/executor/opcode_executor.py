@@ -1797,6 +1797,7 @@ class OpcodeExecutor(OpcodeExecutorBase):
                 )
             else:
                 var_loader.load(stack_arg)
+        print(instr)
         self._graph.pycode_gen.add_pure_instructions([instr])
 
         # gen call resume fn opcode
@@ -1804,12 +1805,19 @@ class OpcodeExecutor(OpcodeExecutorBase):
         stack_size = len(self.stack) + push_n
         resume_fn, _ = self._create_resume_fn(index + 1, stack_size)
         if resume_fn:
-            self._graph.pycode_gen.gen_load_object(
-                resume_fn, resume_fn.__code__.co_name
-            )
-            self._graph.pycode_gen.gen_rot_n(stack_size + 1)
-            for name in resume_input_name:
-                var_loader.load(self.get_var(name))
+            if sys.version_info >= (3, 11):
+                for name in resume_input_name:
+                    var_loader.load(self.get_var(name))
+                self._graph.pycode_gen.gen_load_object(
+                    resume_fn, resume_fn.__code__.co_name
+                )
+            else:
+                self._graph.pycode_gen.gen_load_object(
+                    resume_fn, resume_fn.__code__.co_name
+                )
+                self._graph.pycode_gen.gen_rot_n(stack_size + 1)
+                for name in resume_input_name:
+                    var_loader.load(self.get_var(name))
             self._graph.pycode_gen.gen_call_function(
                 argc=resume_fn.__code__.co_argcount,
             )
